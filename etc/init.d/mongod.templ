@@ -1,0 +1,89 @@
+#!/bin/bash
+
+# mongod - Startup script for mongod
+
+# chkconfig: 35 85 15
+# description: Mongo is a scalable, document-oriented database.
+# processname: mongod
+# config: /etc/mongod_\$SERVICE.conf
+# pidfile: written in config file
+
+. /etc/rc.d/init.d/functions
+
+SERVICE="%port%"
+
+CONFIGFILE="/etc/mongod."$SERVICE".conf"
+OPTIONS=" -f $CONFIGFILE"
+SYSCONFIG="/etc/sysconfig/mongod"
+LOCKFILE="/var/lock/subsys/mongod."$SERVICE
+
+DBPATH=`sed -n -e 's/^dbpath\ *=\ *//p' "$CONFIGFILE"`
+PIDFILE=`sed -n -e 's/^pidfilepath\ *=\ *//p' "$CONFIGFILE"`
+mongod=${MONGOD-/usr/bin/mongod}
+
+MONGO_USER=mongod
+MONGO_GROUP=mongod
+
+if [ -f "$SYSCONFIG" ]; then
+    . "$SYSCONFIG"
+fi
+
+NUMACTL_ARGS="--interleave=all"
+if which numactl >/dev/null 2>/dev/null && numactl $NUMACTL_ARGS ls / >/dev/null 2>/dev/null
+then
+    NUMACTL="numactl $NUMACTL_ARGS"
+else
+    NUMACTL=""
+fi
+
+start()
+{
+  [ -f $LOCKFILE ] && echo "lockfile $LOCKFILE exists!" && exit 1 
+  echo -n $"Starting mongod."$SERVICE": "
+  daemon --user "$MONGO_USER" $NUMACTL $mongod $OPTIONS
+  RETVAL=$?
+  echo
+  [ $RETVAL -eq 0 ] && touch $LOCKFILE
+}
+
+stop()
+{
+  echo -n $"Stopping mongod: "
+  killproc -p "$PIDFILE" -d 300 /usr/bin/mongod
+  RETVAL=$?
+  echo
+  [ $RETVAL -eq 0 ] && rm -f $LOCKFILE
+}
+
+restart () {
+	stop
+	start
+}
+
+ulimit -n 12000
+RETVAL=0
+
+case "$1" in
+  start)
+    start
+    ;;
+  stop)
+    stop
+    ;;
+  restart|reload|force-reload)
+    restart
+    ;;
+  condrestart)
+    [ -f $LOCKFILE ] && restart || :
+    ;;
+  status)
+    status -p "$PIDFILE" $mongod
+    RETVAL=$?
+    ;;
+  *)
+    echo "Usage: $0 {start|stop|status|restart|reload|force-reload|condrestart}"
+    RETVAL=1
+esac
+
+exit $RETVAL
+
